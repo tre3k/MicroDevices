@@ -16,16 +16,34 @@
 # this program.  If not, see <http://www.gnu.org/licenses/>.
 
 
+# Set this variables if you need special versions for U-Boot and Linux kernel
+UBOOT_VERSION=v2024.01
+LINUX_VERSION=v6.7
+
+# Set default (if you need) prefex for coross-compiler, also architecture
+if [[ -z $CROSS_COMPILE ]]; then
+    export CROSS_COMPILE=arm-linux-gnueabihf-
+fi
+if [[ -z $ARCH ]]; then export ARCH=arm; fi
+
+# Add options for make
+if [[ -z $MAKE_OPTIONS ]]; then
+    MAKE_OPTIONS="-j8"
+fi
+
+# Not edit this variable
 ROOTDIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+# You can edit if you want get Linux or U-boot from not official repos.
+LINUX_REPO="git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
+UBOOT_REPO="https://source.denx.de/u-boot/u-boot.git"
 
 LINUX_DIR=${ROOTDIR}/linux
 UBOOT_DIR=${ROOTDIR}/u-boot
 
-LINUX_REPO="git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
-UBOOT_REPO="https://source.denx.de/u-boot/u-boot.git"
-
 repo_dirs=(${LINUX_DIR} ${UBOOT_DIR})
 repo_urls=(${LINUX_REPO} ${UBOOT_REPO})
+
 
 function help() {
     echo $0 "<oprions/device> <command>"
@@ -54,13 +72,14 @@ function getRepos() {
 function syncRepos(){
     for dir in ${repo_dirs[@]}; do
         cd ${dir}
+        git switch master
         git fetch
         git rebase
     done
     cd ${ROOTDIR}
 }
 
-## devName, command
+## ARGS: devName, command
 function _deviceCommand() {
     case $2 in
         "build")
@@ -73,9 +92,44 @@ function _deviceCommand() {
     esac
 }
 
+# Arg: name in "configs" directory
+function _buildUBoot () {
+    cd ${UBOOT_DIR}
+    if [[ -z $UBOOT_VERSION ]]; then
+        git checkout master
+    else
+        git checkout ${UBOOT_VERSION}
+    fi
+
+    make clean
+    cp ${ROOTDIR}/configs/$1/u-boot.config ./.config
+    make oldconfig
+    make ${MAKE_OPTIONS}
+}
+
+# Arg: name in "configs" directory
+function _buildLinux () {
+    cd ${LINUX_DIR}
+    if [[ -z $LINUX_VERSION ]]; then
+        git checkout master
+    else
+        git checkout ${LINUX_VERSION}
+    fi
+
+    make clean
+    cp ${ROOTDIR}/configs/$1/linux.config ./.config
+    make oldconfig
+    make ${MAKE_OPTIONS}
+}
+
 
 function de10NanoBuild() {
-    echo "de10-nano build"
+    NAME="de10-nano"
+    echo -e "\033[1m Stage 1: build Das U-Boot\033[0m"
+    _buildUBoot ${NAME}
+
+    echo -e "\033[1m Stage 2: build Linux kernel\033[0m"
+    _buildLinux ${NAME}
 }
 
 function rpi3BBuild() {
