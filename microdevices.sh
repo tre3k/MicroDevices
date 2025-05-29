@@ -38,6 +38,9 @@ ROOTDIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 LINUX_REPO="git://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git"
 UBOOT_REPO="https://source.denx.de/u-boot/u-boot.git"
 
+ROOTFS_URL="http://ca.us.mirror.archlinuxarm.org/os/ArchLinuxARM-armv7-latest.tar.gz"
+ROOTFS_RPI_URL="http://ca.us.mirror.archlinuxarm.org/os/ArchLinuxARM-rpi-armv7-latest.tar.gz"
+
 LINUX_DIR=${ROOTDIR}/linux
 UBOOT_DIR=${ROOTDIR}/u-boot
 
@@ -57,7 +60,8 @@ function help() {
     echo -e "\trpi3b\r\t\t\tRaspberryPI 3B v1.2"
     echo ""
     echo -e "\033[1m    commands: \033[0m"
-    echo -e "\tbuild\r\t\t\tBuild u-boot and linux kernel"
+    echo -e "\tbuild\r\t\t\t\t\tBuild u-boot and linux kernel"
+    echo -e "\tremote-install-arch <SD dev>\r\t\t\t\t\tAutomatic install image from archlinuxarm.org"
     exit
 }
 
@@ -85,6 +89,15 @@ function _deviceCommand() {
         "build")
             ${1}Build
             ;;
+
+	"remote-install-arch")
+	    mkdir -p ${ROOTDIR}/workdir
+	    mkdir -p ${ROOTDIR}/workdir/${1}
+	    workdir=${ROOTDIR}/workdir/${1}
+
+	    ${1}RemoteInstallArch $3
+	    ;;
+
         *)
             echo "see 'command' section in help"
             exit
@@ -136,6 +149,67 @@ function rpi3BBuild() {
     echo "RaspberryPI 3B build"
 }
 
+function rpi3BRemoteInstallArch() {
+    cd ${workdir}
+    root_archive=ArchLinuxARM-rpi-armv7-latest.tar.gz
+    root_URL=http://fl.us.mirror.archlinuxarm.org/os/
+
+    echo "Remote arch install"
+
+    echo "o
+          p
+          n
+          p
+          1
+
+          +200M
+          t
+          c
+          n
+          p
+
+
+
+          w" | fdisk ${1}
+    mkfs.vfat ${1}1
+    mkfs.ext4 ${1}2
+
+    mkdir -p ${workdir}/boot
+    mkdir -p ${workdir}/root
+
+    mount ${1}1 ${workdir}/boot
+    mount ${1}2 ${workdir}/root
+
+    if [[ -f ${root_archive} ]]; then
+	md5sum_current=(`md5sum ${root_archive}`)
+	md5sum_remote=(`curl ${root_URL}${root_archive}.md5`)
+	echo ${md5sum_remote[0]} ${md5sum_current[0]}
+    else
+	md5sum_current=("NOT DOWNLAODED")
+    fi
+
+    if [[ ${md5sum_remote[0]} != ${md5sum_current[0]} ]]; then
+	wget ${root_URL}${root_archive}
+    fi
+
+    echo "Unpacking..."
+    bsdtar -xpf ArchLinuxARM-rpi-armv7-latest.tar.gz -C root
+    sync
+
+    mv root/boot/* boot
+    umount boot root
+
+    echo -e "\033[1m"
+    echo "Insert the SD card into the Raspberry Pi, connect ethernet, and apply 5V power."
+    echo "Use the serial console or SSH to the IP address given to the board by your router."
+    echo -e "\t - Login as the default user alarm with the password alarm."
+    echo -e "\t - The default root password is root."
+    echo "Initialize the pacman keyring and populate the Arch Linux ARM package signing keys"
+    echo -e "\tpacman-key --init"
+    echo -e "\tpacman-key --populate archlinuxarm"
+    echo -e "\033[0m"
+}
+
 case $1 in
     "--get-repos")
         getRepos
@@ -146,11 +220,11 @@ case $1 in
         ;;
 
     "de10-nano")
-        _deviceCommand de10Nano $2
+        _deviceCommand de10Nano $2 $3
         ;;
 
     "rpi3b")
-        _deviceCommand rpi3B $2
+        _deviceCommand rpi3B $2 $3
         ;;
 
     "--help")
